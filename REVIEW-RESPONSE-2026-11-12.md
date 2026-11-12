@@ -134,15 +134,18 @@ Closed in this response cycle (branch `audit/report`):
   `boot_a` and `persist` writes; asserts refusal at plan equality AND at
   the flash gate (the combination changes nothing about the allowlist).
 
-Filed, not closable on this host (need upstream code changes or a real
-container/kernel):
-- **Check 18 (boot-update rollback on a corrupted read-back):** needs the
-  phone-side dd path; upstream already carries
-  `packages/omamobile-boot-update/test` — extend there.
-- **Real-ext4 battery variant:** `mkfs.ext4` in the shims' place + real
-  debugfs/e2fsck (e2fsprogs absent on this audit host; a container run
-  covers it — Phase A of the reviewer's plan, agreed).
-- **OMAMOBILE_ZONEINFO_DIR** upstream flag (see §4).
+- **Real-ext4 battery variant: CLOSED since writing the list above.**
+  `REAL_FS=1 proof/run-battery.sh` = 20/20 with a real 4 MiB ext4, real
+  debugfs writes, real `e2fsck -fn`, and post-run assertions (mode 0600,
+  uid 0, contents). See HANDOFF §2 for the exact mode description.
+- **Phase A partial result:** upstream's own
+  `tests/install-phone-initramfs` runs **9/9 ok** on this host under a
+  rootless proot FHS with AOSP's `mkbootimg.py` — the byte-parity proof
+  between the installer and `omamobile-boot-update` no longer waits for
+  the container.
+Still filed: **Check 18** (boot-update rollback on a corrupted read-back
+— needs the phone-side dd path or an upstream test extension) and
+**OMAMOBILE_ZONEINFO_DIR** upstream flag (see §4).
 
 ## 6. The review bundle
 

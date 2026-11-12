@@ -25,7 +25,24 @@ UFS_RW="boot_b dtbo_b userdata"
 EOF
 head -c 4096 /dev/urandom > images/boot.img
 head -c 4096 /dev/urandom > images/dtbo.img
-head -c 2048 /dev/urandom > omamobile-rootfs-cheetah-test-aarch64.img.zst
+if [[ ${REAL_FS:-0} == 1 ]]; then
+  # A real 4 MiB ext4 (label omamobile-root) with the directories the
+  # installer writes into, compressed with real zstd — so the battery's
+  # debugfs/dumpe2fs/e2fsck calls run against a genuine file system.
+  img="$bundle/.root.tmp.img"
+  rm -f "$img"
+  mke2fs -q -F -t ext4 -L omamobile-root -b 1024 -N 64 "$img" 4M
+  debugfs -w -f - "$img" >/dev/null 2>&1 <<'DBG'
+mkdir /etc
+mkdir /etc/omamobile
+mkdir /root
+mkdir /root/.ssh
+DBG
+  zstd -q -f "$img" -o omamobile-rootfs-cheetah-test-aarch64.img.zst
+  rm -f "$img"
+else
+  head -c 2048 /dev/urandom > omamobile-rootfs-cheetah-test-aarch64.img.zst
+fi
 R=$(sha256sum omamobile-rootfs-cheetah-test-aarch64.img.zst | cut -d' ' -f1)
 echo "$R  omamobile-rootfs-cheetah-test-aarch64.img.zst" > omamobile-rootfs-cheetah-test-aarch64.img.zst.sha256
 printf 'device: cheetah test\nkernel modules: 6.12.0-test\n' > omamobile-rootfs-cheetah-test-aarch64.MANIFEST

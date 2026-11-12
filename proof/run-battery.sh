@@ -9,7 +9,11 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd -- "$here/.." && pwd)
 work=$(mktemp -d)
 shims="$work/bin"; mkdir -p "$shims"
-ln -sf "$here/shims/"* "$shims/"
+if [[ ${REAL_FS:-0} == 1 ]]; then
+  ln -sf "$here/shims/fastboot" "$shims/fastboot"
+else
+  ln -sf "$here/shims/"* "$shims/"
+fi
 export GETVAR_TXT="$work/getvar.txt" AUDIT_LOG="$work/fastboot-commands.log"
 cat > "$GETVAR_TXT" <<'EOF'
 (bootloader) product: cheetah
@@ -34,7 +38,27 @@ bad()  { echo "  FAIL: $*"; fail=$((fail+1)); }
 expect_grep() { grep -q "$1" "$2" && ok "$3" || bad "$3 (wanted '$1' in $2)"; }
 expect_die()  { [[ $1 == "$2" ]] && ok "$3" || bad "$3 (rc=$1, wanted $2)"; }
 
-bash "$here/make-mock-bundle.sh" "$work/bundle" > /dev/null
+if [[ ${REAL_FS:-0} == 1 ]]; then
+  # Real-ext4 mode: fastboot is shimmed; debugfs/dumpe2fs/e2fsck/zstd come
+  # from the host; and one more shim makes `rm` decline deleting the root
+  # image, so install-phone's cleanup trap leaves it for the post-run
+  # assertions. Environment instrumentation only — the script under test
+  # is byte-identical to the branch's tools/install-phone.
+  REAL_RM=$(command -v rm)
+  cat > "$shims/rm" <<RMEOF
+#!/bin/bash
+for a in "\$@"; do
+  b=\${a##*/}
+  [[ \$b == root.img || \$b == root.simg ]] && exit 0
+done
+exec "$REAL_RM" "\$@"
+RMEOF
+  chmod +x "$shims/rm"
+  mkdir -p "$work/home/.cache/omamobile-install"
+  REALFS=1 bash "$here/make-mock-bundle.sh" "$work/bundle" > /dev/null
+else
+  bash "$here/make-mock-bundle.sh" "$work/bundle" > /dev/null
+fi
 export FAKE_WORK="$work/home/.cache/omamobile-install"
 export HOME="$work/home"
 run() { local ans=$1; shift; (cd "$work/bundle" && PATH="$shims:$PATH" bash install "$@" < "$ans") ; }
@@ -75,6 +99,20 @@ for want in "flash boot_b" "flash dtbo_b" "flash userdata" "--set-active=b" "reb
 done
 [[ $(grep -c "would run:" "$work/t4.log") == 5 ]] && ok "exactly 5 commands" || bad "command count != 5"
 [[ $(grep -c "wrote:" "$AUDIT_LOG") == 0 ]] && ok "zero write commands executed" || bad "shim recorded writes"
+
+if [[ ${REAL_FS:-0} == 1 ]]; then
+  keep="$FAKE_WORK/root.img"
+  echo "  [real-fs] post-run assertions on $keep"
+  st=$(debugfs -R "stat /etc/omamobile/firstboot.conf" "$keep" 2>/dev/null)
+  debugfs -R "stat /etc/omamobile/firstboot.conf" "$keep" 2>/dev/null | grep -q "Mode:  0600" && \
+    debugfs -R "stat /etc/omamobile/firstboot.conf" "$keep" 2>/dev/null | grep -qE "User: +0" && \
+    ok "firstboot.conf mode 0600 uid 0 (real debugfs)" || bad "firstboot.conf stat: $(echo "$st" | head -1)"
+  debugfs -R "cat /etc/omamobile/firstboot.conf" "$keep" 2>/dev/null | grep -q "^USERNAME=omarchy-auditor$" && ok "firstboot.conf content written (real ext4)" || bad "firstboot.conf content"
+  debugfs -R "cat /root/.ssh/authorized_keys" "$keep" 2>/dev/null | grep -q "audithandoff@test" && ok "authorized_keys written (real ext4)" || bad "authorized_keys"
+  e2fsck -fn "$keep" > /dev/null 2>&1 && ok "real e2fsck -fn clean" || bad "e2fsck dirty"
+else
+  echo "  (REAL_FS=0: debugfs writes mocked — run REAL_FS=1 for the real-ext4 pass)"
+fi
 
 echo "[5] --serial mismatch is refused"
 rc=0; run "$answers" --dry-run --unsigned --serial WRONGSERIAL > "$work/t5.log" 2>&1 || rc=$?
