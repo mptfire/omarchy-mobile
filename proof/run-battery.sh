@@ -90,6 +90,22 @@ sed 's/current-slot: a/current-slot: b/' "$GETVAR_TXT" > "$work/getvar-b.txt"
 rc=0; (cd "$work/bundle" && PATH="$shims:$PATH" GETVAR_TXT="$work/getvar-b.txt" bash install --dry-run --unsigned < "$answers") > "$work/t7.log" 2>&1 || rc=$?
 expect_grep "the phone only reports slot b.s bootloader" "$work/t7.log" "slot-b guard (bootloader-slots gate fires first)"
 
+echo "[8] flag-combination matrix: --unsigned --reinstall + boot_a/persist writes"
+python3 - "$work/bundle" <<'PYM'
+import json, sys
+b = sys.argv[1]
+m = json.load(open(b + "/manifest.json"))
+m["install"]["writes"] = [
+  {"partition":"boot_a","source":"images/boot.img","size":4096,"partition_size":None,"erases_userdata":False},
+  {"partition":"persist","source":"images/dtbo.img","size":4096,"partition_size":None,"erases_userdata":False},
+  {"partition":"userdata","source":"root_image","size":None,"partition_size":None,"erases_userdata":True}]
+m["install"]["storage_guard_allowlist"] = ["boot_a","boot_b","dtbo_b","userdata","persist"]
+open(b + "/manifest.json","w").write(json.dumps(m))
+PYM
+(cd "$work/bundle" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
+rc=0; run "$answers" --dry-run --unsigned --reinstall --bootloader-slots-match bootloader-2026 > "$work/t8.log" 2>&1 || rc=$?
+expect_grep "not the descriptor.s" "$work/t8.log" "hostile write list refused (allowlist equality, plan rule behind it)"
+
 echo
 echo "battery: $pass passed, $fail failed"
 exit $((fail > 0))
