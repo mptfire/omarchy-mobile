@@ -150,3 +150,73 @@ self-contained package bumps covered by tests/all + pr-check policy:
    currently exercised by tests only on dev machines).
 5. SECURITY-PLAN: one paragraph on the AVB test key (S-4) and the
    in-bundle trust model (S-5).
+
+---
+
+## Continuation pass (same SHA, same session)
+
+### Shellcheck sweep (72 shell files, 0.11.0, warning+)
+Only actionable hit: `bin/omamobile:876` SC2115 `rm -rf "$img"/*` — safe by
+construction (`$img` always ends in `/images` via `${KERNEL_OUT:-...}`), but
+worth `rm -rf -- "${img:?}"/*` for defense. The SC1007/SC2010 hits in
+bring-up probes are style; the `tools/systemd/*.service` "errors" are
+shellcheck fed non-shell unit files (harness artifact); SC1071 files are
+extensionless python (bundle-manifest, phone-ssh-proxy, sit-sim, …).
+
+### Supply-chain deep-dive (all clean)
+- `tools/release-key-init`: offline cert-only ed25519 primary + online
+  signing subkey; tmpfs gen, passphrase via fd, ≥12 chars, removable-media
+  warning, offline revocation cert; rotation story coherent (subkey
+  revoke/re-certify, phones keep trusting primary).
+- `tools/make-bundle`: deterministic uncompressed tar; SHA256SUMS +
+  `.sig` (+ tar.sha256.sig); version-by-calendar enforced for signed
+  releases (install-phone re-checks).
+- `tools/repo-publish`/`repo-push`: signs with `keys/gnupg.release`
+  (signing.sh), publishes to pkgs.omamobile.org over ssh; promote path
+  keeps per-version rollback; worktree detached at origin/main.
+- Phone `rootfs/pacman.conf`: `SigLevel = Required DatabaseOptional` —
+  package signatures required; [omamobile] via https mirrorlist.
+- `tools/fetch-toolchain`: tree-digest verification of the pinned AOSP
+  clang (`toolchain.lock`), `--verify` re-hashes.
+- `tools/server/releases-nginx.sh`: maintainer-only, DRY_RUN, backup +
+  nginx -t + revert-on-fail.
+- `omamobile-remote`: opt-in, no units/listeners/ports; `omamobile-mirror`:
+  USB wayvnc with password.
+
+### Dead-man switches (code-level verification)
+`initramfs/init:397-415`: 45 s loop on `udc/*/state == configured`;
+failure → on-screen dmesg tail + 20 s grace (held while
+`/run/omamobile-resizing` exists) + `panic=10` → ABL exhausts slot B
+retries → boots slot A (stock Android). `packages/omamobile-boot-update`:
+write-verify-rollback (leading-bytes sha256 read-back per partition,
+previous images kept, battery + stat-idle checks, AVB key pinned to
+AOSP testkey by SHA256, refuses substitutes). Design consistent;
+runtime behavior UNVERIFIED (no hardware).
+
+### Per-PR verdicts (all 30 open at audit time)
+- #651 mark-slot-b+LUN push — **merge** (inert; journal/confirm; fixes
+  push multi-match).
+- #639 slot probe — **draft, keep** (EXIT-trap restore, off by default).
+- #682/#681 install-phone dir handling — **merge** after rebase.
+- #630 Change PIN page (draft) — **good design**: passwd in pty, stdin
+  only, digits 4-8, LC_ALL=C, 12 s kill, fixed-arg runner, no shell
+  strings. Merge when finished.
+- #669/#677/#626/#595 modem-sit (radio power, call audio, suspend
+  deadlines, tests) — opt-in daemon; review focus = AT-command surface;
+  tests substantial (507-line startup-profile test). **merge with
+  normal review**; no flash-path exposure.
+- #645/#633 guided installer + first-boot — maintainer-authored, largest
+  surface; hold to the install-phone contract (verify-only/dry-run/
+  manifest-as-data). **review in series**.
+- #690 pkg-version-from-git, #687 docs lessons, #687-series docs PRs
+  (#685 merged), #679/#659/#655/#675/#676 device docs/tools — **merge
+  after CI**.
+- #658/#636/#635/#612/#614/#610/#600/#652 shell/settings/features —
+  **merge after CI**; no new external deps observed in sampled diffs.
+- #644 build index (factory build metadata) — check for serials/IMEIs in
+  the index before merge (policy: no per-phone data in repo).
+- #666 NCM transfer profile — check the udev/systemd bits stay opt-in.
+
+### New finding from continuation
+- **S-6 (Info)**: `bin/omamobile:876` `rm -rf "$img"/*` — suggest
+  `"${img:?}"`; currently safe by construction.
