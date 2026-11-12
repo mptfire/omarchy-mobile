@@ -24,7 +24,7 @@ jobs:
     name: Policy (identifiers, blobs, sign-offs)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       - name: tools/pr-check
@@ -58,7 +58,7 @@ jobs:
               https://archive.archlinux.org/packages/s/simdjson/simdjson-1:5.0.5-1-x86_64.pkg.tar.zst
             node --version
           fi
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: A normal user (some tests check what a user may not do)
         run: |
           useradd -m ci
