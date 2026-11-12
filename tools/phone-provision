@@ -116,7 +116,7 @@ work=${XDG_CACHE_HOME:-$HOME/.cache}/omamobile-provision
 getprop=$HOME/android/reference/raven-stock/getprop.txt
 nv_backup=""
 dry=0 skip_extract=0 fingerprint=0 restore_td=0 import_home=0 restore_config=0 restore_wifi=0 waves=0 keep=0 force=0 backup_given=0 first_given=0
-user="" factory="" device=cheetah expect_sha=""
+user="" factory="" device=cheetah expect_sha="" insecure_no_sha=0
 PHONE_SSH=${PHONE_SSH:-$ROOT/tools/phone-ssh}
 bootconfig=${PHONE_BOOTCONFIG:-/proc/bootconfig}
 while (($#)); do
@@ -140,6 +140,7 @@ while (($#)); do
     -d) device=${2:?}; shift ;;
     --getprop) getprop=${2:?}; shift ;;
     --nv-backup) nv_backup=${2:?}; shift ;;
+    --insecure-no-sha256) insecure_no_sha=1 ;;
     --expect-sha256) expect_sha=${2:?}; shift ;;
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 { sub(/^# ?/, ""); print }' "$ROOT/tools/phone-provision"; exit 0 ;;
     -*) die "unknown option $1" ;;
@@ -275,8 +276,13 @@ for f in "$config_tar" $( ((fingerprint)) && echo "$fp_tar"); do
   if [[ -f $f.sha256 ]]; then
     [[ $(sha256sum < "$f" | cut -d' ' -f1) == "$(cut -d' ' -f1 < "$f.sha256")" ]] || die "$f doesn't match $f.sha256"
     note "$(basename "$f"): checksum matches"
+  elif [[ $insecure_no_sha == 1 ]]; then
+    note "$(basename "$f"): no .sha256 (--insecure-no-sha256)"
   else
-    note "$(basename "$f"): no .sha256 to check against"
+    die "$(basename "$f"): no $f.sha256. This tar holds your phone's identity
+     (board id, NV checksums, accounts) and is restored onto the phone as-is;
+     verify it with 'sha256sum "$f" > "$f.sha256"' exactly once, at backup
+     time, or pass --insecure-no-sha256 to accept it unchecked"
   fi
 done
 fi
