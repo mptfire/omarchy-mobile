@@ -1,0 +1,19 @@
+#!/bin/bash
+# Mock debugfs: stat says the dirs exist; cat maps the three written files
+# back to the work dir so install-phone's cmp checks pass; -w -f - consumes
+# the command file (the real writes into ext4 are NOT exercised here).
+W="${FAKE_WORK:?FAKE_WORK unset}"
+case "$1" in
+  -R) case "$2" in
+      stat*) echo "Inode: 12 Type: directory" ;;
+      cat*)
+        p=${2#cat }; p=${p//\"/}
+        case $p in
+          /etc/omamobile/firstboot.conf) cat "$W/firstboot.conf" ;;
+          /root/.ssh/authorized_keys)    cat "$W/authorized_keys" ;;
+          /etc/omamobile/boot-update.conf) cat "$W/boot-update.conf" ;;
+        esac ;;
+    esac ;;
+  -w) cat > /dev/null ;;
+esac
+exit 0

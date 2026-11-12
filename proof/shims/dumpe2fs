@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "Filesystem volume name: omamobile-root"

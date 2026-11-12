@@ -1,0 +1,8 @@
+#!/bin/bash
+# Mock zstd -d: copies input to the -o output (no compression).
+in=""; out=""
+while (($#)); do
+  case "$1" in -o) out="$2"; shift 2 ;; -*) shift ;; *) [[ -z $in ]] && in="$1"; shift ;; esac
+done
+[[ -n $in && -n $out ]] || { echo "zstd shim: need input and -o out" >&2; exit 1; }
+cp "$in" "$out"

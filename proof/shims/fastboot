@@ -1,0 +1,11 @@
+#!/bin/bash
+# Mock fastboot: one device "AUDITSERIAL", cheetah slot a, unlocked.
+# Write-type commands are recorded to $AUDIT_LOG (default: discarded), so the
+# proof asserts "no writes executed" by counting the log.
+LOG="${AUDIT_LOG:-/dev/null}"
+for a in "$@"; do
+  if [[ $a == "getvar" ]]; then cat "${GETVAR_TXT:?GETVAR_TXT unset}"; exit 0; fi
+done
+if [[ "$1" == "devices" ]]; then echo "AUDITSERIAL fastboot"; exit 0; fi
+{ echo "OKAY"; echo "wrote: $*"; } >> "$LOG"
+echo "OKAY."; exit 0
