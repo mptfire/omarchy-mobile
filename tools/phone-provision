@@ -116,7 +116,7 @@ work=${XDG_CACHE_HOME:-$HOME/.cache}/omamobile-provision
 getprop=$HOME/android/reference/raven-stock/getprop.txt
 nv_backup=""
 dry=0 skip_extract=0 fingerprint=0 restore_td=0 import_home=0 restore_config=0 restore_wifi=0 waves=0 keep=0 force=0 backup_given=0 first_given=0
-user="" factory="" device=cheetah
+user="" factory="" device=cheetah expect_sha=""
 PHONE_SSH=${PHONE_SSH:-$ROOT/tools/phone-ssh}
 bootconfig=${PHONE_BOOTCONFIG:-/proc/bootconfig}
 while (($#)); do
@@ -140,6 +140,7 @@ while (($#)); do
     -d) device=${2:?}; shift ;;
     --getprop) getprop=${2:?}; shift ;;
     --nv-backup) nv_backup=${2:?}; shift ;;
+    --expect-sha256) expect_sha=${2:?}; shift ;;
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 { sub(/^# ?/, ""); print }' "$ROOT/tools/phone-provision"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z $factory ]] || die "one factory image only"; factory=$1 ;;
@@ -148,6 +149,16 @@ while (($#)); do
 done
 ((skip_extract)) || [[ -n $factory ]] || die "give the factory image (FACTORY.zip), or --skip-extract"
 [[ -z $factory || -f $factory ]] || die "no $factory"
+# The factory image is what firmware is extracted from and pushed to the
+# phone; Google publishes its SHA-256 next to the download. Verify against
+# it when the caller passes --expect-sha256 (the extraction itself only
+# checks the board, so a tampered image would otherwise pass silently).
+if [[ -n $factory && -n $expect_sha ]]; then
+  [[ $expect_sha =~ ^[0-9a-fA-F]{64}$ ]] || die "--expect-sha256 takes the 64-hex-digit digest Google publishes for this image"
+  [[ $(sha256sum < "$factory" | cut -d' ' -f1) == "${expect_sha,,}" ]] ||
+    die "$(basename "$factory") does not match --expect-sha256: refusing to extract from it"
+  note "factory image matches --expect-sha256"
+fi
 ((restore_td == 0 || fingerprint)) || die "--restore-td goes with --fingerprint"
 [[ -n $factory ]] && factory=$(readlink -f "$factory")
 [[ $device == cheetah || $device == raven ]] || die "unknown device $device (cheetah or raven)"
