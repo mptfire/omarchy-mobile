@@ -220,3 +220,54 @@ runtime behavior UNVERIFIED (no hardware).
 ### New finding from continuation
 - **S-6 (Info)**: `bin/omamobile:876` `rm -rf "$img"/*` — suggest
   `"${img:?}"`; currently safe by construction.
+
+---
+
+## Continuation pass 2 (same SHA)
+
+### S-7 (Low): kernel allows unrestricted /dev/mem
+`kernel/configs/omamobile.config`: `CONFIG_DEVMEM=y`,
+`# CONFIG_STRICT_DEVMEM is not set` (449-line fragment on arm64 defconfig).
+Root on the phone can map arbitrary physical memory (kernel text, MMIO),
+which bypasses every userspace-level guarantee; the bring-up probes
+(`tools/devmem.c`, aoc/cs35l41 tooling) explain the choice. Fix: `STRICT_DEVMEM=y`
+for release kernels (or an omamobile-dev kernel variant), or document the
+trade-off in SECURITY-PLAN.
+
+### S-8 (Low, UX/path confusion): phone-provision cds to the repo root
+`tools/phone-provision:107` (`cd "$(dirname ...)/.."`) runs before arg
+checks, so a *relative* FACTORY.zip resolves against the repository root,
+not the caller's cwd — "no factory.zip" in the common case, and a silently
+different file if a same-named file happens to sit there. Fix: resolve
+factory/backup/nv-backup paths against `$PWD` captured before the `cd`.
+Same pattern exists in `tools/build-rootfs` (repo-root cwd is intended
+there; only phone-provision takes user file paths).
+
+### Verified this pass
+- S-2 fix works end-to-end: wrong digest → `refusing to extract`; right
+  digest → proceeds (then correctly demands run type; nothing staged);
+  malformed → refuses.
+- Rootfs default-credential claim (README/RELEASES): `rootfs/build-inside:201-208`
+  — dies on an `alarm` account or any uid ≥ 1000, forces `root:!*:`,
+  removes the pacman keyring, resets machine-id/random-seed. Holds.
+- `omamobile-boot-update` write gates: refuses unless slot B is the
+  booting slot (`androidboot.slot_suffix` in bootconfig AND cmdline),
+  initramfs allowlist must equal descriptor UFS_RW, partition found by
+  GPT name, `ro 0`, leading-bytes sha256 read-back, previous kept for
+  rollback. CONTRIBUTING:58's claims match the code.
+- CONTRIBUTING §3.1 documents the GPT-sector exception *before* any
+  device uses it — #651 is consistent with the rule (no entry yet ⇒ inert).
+- `tools/nv-backup`: partitions come from the descriptor (NV_PARTS +
+  NV_BACKUP_EXTRA), COMPATIBLE-checked, read-only + unmounted or abort.
+- `manifests/omamobile.xml`: lineage-ref pulls TheMuppets' proprietary
+  cheetah vendor tree — third-party blob source for the reference build
+  only; nothing proprietary lands in this repo (license model intact,
+  provenance = that repo's git history).
+
+### device.conf parser count
+10+ consumers (`install-phone`, `omamobile`, `nv-backup`, `factory-index`,
+`bundle-manifest`, `release`, `build-packages`, `build-rootfs`,
+`make-bundle`, `phone-smoke`, `local-key-init`). Regexes agree on the
+important invariant (no `$`, backtick, backslash, quotes, control chars in
+values) but are spelled independently — one shared
+`tools/lib/parse-descriptor.sh` would remove the drift risk.
